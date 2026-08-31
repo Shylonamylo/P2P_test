@@ -2,6 +2,8 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using P2P_test.Models.Models;
+using P2P_test.Models.UDP;
 using P2P_test.ViewModels;
 using P2P_test.Views;
 
@@ -17,9 +19,15 @@ sealed class Program
     {
         var host = Host.CreateDefaultBuilder().ConfigureServices((c, s) =>
         {
-
-            s.AddTransient<MainWindow>();
-            s.AddTransient<MainWindowViewModel>();
+            
+            s.AddSingleton<MainWindow>();
+            s.AddSingleton<MainWindowViewModel>();
+            
+            s.AddSingleton<SettingsViewModel>();
+            s.AddSingleton<ChatViewModel>();
+                
+            s.AddSingleton<Settings>();
+            s.AddSingleton<Engine>();
 
         }).Build();
         BuildAvaloniaApp(host.Services)

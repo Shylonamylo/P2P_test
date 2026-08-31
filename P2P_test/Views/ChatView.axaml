@@ -1,0 +1,64 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:viewModels="clr-namespace:P2P_test.ViewModels"
+             xmlns:views="clr-namespace:P2P_test.Views"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:DataType="viewModels:ChatViewModel"
+             x:Class="P2P_test.Views.ChatView">
+    
+    <UserControl.Resources>
+        <views:MessageGridConverter x:Key="MessageGridConverter"/>
+        <views:MessageAligmentConverter x:Key="MessageAligmentConverter"/>
+        <views:MessageBackgroundConverter x:Key="MessageBackgroundConverter"/>
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="100,*, 50">
+        <Grid ColumnDefinitions="* *">
+            <StackPanel HorizontalAlignment="Center">
+                <TextBlock Text="Ваш адрес, передайте его собеседнику"></TextBlock>
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <TextBlock x:Name="ClientAddressTextBlock" Text="{Binding ClientAddress}" VerticalAlignment="Center"></TextBlock>
+                    <Button Content="Скопировать" Click="CopyAddress" Margin="10,0,0,0"></Button>
+                </StackPanel>
+            </StackPanel>
+            
+            <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                <TextBlock Text="Введите адрес собеседника"></TextBlock>
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <TextBox Text="{Binding PeerAddress}" VerticalAlignment="Center"></TextBox>
+                    <Button Content="Подключиться" Click="Button_OnClick" Margin="10,0,0,0"></Button>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+        
+        <ListBox Grid.Row="1" x:Name="MessageHolder" HorizontalAlignment="Stretch" ItemsSource="{Binding ChatMessages}">
+            <ListBox.Styles>
+                <Style Selector="ListBoxItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="Focusable" Value="False" />
+                    <Setter Property="IsHitTestVisible" Value="False" />
+                </Style>
+            </ListBox.Styles>
+            
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Grid ColumnDefinitions="*, *">
+                        <Border Grid.Column="{Binding IsMine, Converter={StaticResource MessageGridConverter}}" 
+                                HorizontalAlignment="{Binding IsMine, Converter={StaticResource MessageAligmentConverter}}"
+                                Background="{Binding IsMine, Converter={StaticResource MessageBackgroundConverter}}"
+                                CornerRadius="8"
+                                Padding="10"
+                                Margin="4"><!--Background="{Binding IsMine, Converter={StaticResource MessageBackgroundConverter}}" -->
+
+                            <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                        </Border>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    
+        <TextBox Grid.Row="2" Text="{Binding MessageText}" KeyDown="OnEnterPressed"></TextBox>
+    </Grid>
+</UserControl>

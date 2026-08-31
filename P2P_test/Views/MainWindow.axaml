@@ -3,18 +3,72 @@
         xmlns:vm="using:P2P_test.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:views="clr-namespace:P2P_test.Views"
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
         x:Class="P2P_test.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
         Title="P2P_test">
+        
+       <Window.Resources>
+        
+        <StreamGeometry x:Key="MenuButtonIcon">M19 4a1 1 0 01-1 1H2a1 1 0 010-2h16a1 1 0 011 1zm0 6a1 1 0 01-1 1H2a1 1 0 110-2h16a1 1 0 011 1zm-1 7a1 1 0 100-2H2a1 1 0 100 2h16z</StreamGeometry>
 
-    <Design.DataContext>
-        <!-- This only sets the DataContext for the previewer in an IDE,
-             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
-        <vm:MainWindowViewModel/>
-    </Design.DataContext>
-
-    <TextBlock Text="{Binding Greeting}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+    </Window.Resources>
+    <Window.DataTemplates>
+        <DataTemplate x:DataType="{x:Type vm:SettingsViewModel}">
+            <views:SettingsView DataContext="{Binding}" />
+        </DataTemplate>
+    </Window.DataTemplates>
+    
+    <SplitView IsPaneOpen="{Binding IsPaneOpen}"
+               DisplayMode="CompactInline"
+               CompactPaneLength="54"
+               OpenPaneLength="250">
+        <SplitView.Pane>
+            
+            <Grid RowDefinitions="Auto 10 Auto *" Background="LightGray">
+                <Grid ColumnDefinitions="Auto *">
+                    <PathIcon Data="{StaticResource MenuButtonIcon}"></PathIcon>
+                    <Button Command="{Binding TogglePaneCommand}"
+                            Height="54" Width="54" HorizontalAlignment="Left" />
+                    <TextBlock Grid.Column="1" Text="Меню" FontSize="30" FontWeight="Bold" HorizontalAlignment="Center"
+                               VerticalAlignment="Center">
+                    </TextBlock>
+                </Grid>
+                
+                <ListBox Grid.Row="2" ItemsSource="{Binding NavItems}"
+                         SelectedItem="{Binding SelectedNavItem}"
+                         Background="DarkGray">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ColumnDefinitions="Auto, *">
+                                <TextBlock Grid.Column="1" Margin="0,0,0,0" Text="{Binding Title}"
+                                           VerticalAlignment="Center" HorizontalAlignment="Center" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                
+                <ListBox Grid.Row="3" ItemsSource="{Binding DownNavItems}"
+                         SelectedItem="{Binding SelectedDownNavItem}"
+                         Background="DarkGray"
+                         VerticalAlignment="Bottom">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ColumnDefinitions="Auto, *">
+                                <TextBlock Grid.Column="1" Margin="0,0,0,0" Text="{Binding Title}"
+                                           VerticalAlignment="Center" HorizontalAlignment="Center" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </SplitView.Pane>
+        
+        <SplitView.Content>
+            <ContentControl Content="{Binding CurrentPage}"></ContentControl>
+        </SplitView.Content>
+    </SplitView>
 
 </Window>
