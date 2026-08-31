@@ -153,7 +153,8 @@ public class Engine
         
         public void Stop()
         {
-            Connected = false;
+            SendMessage(MessageType.TextMessage, "Клиент отключился");
+            Connected = false;  
             StopMsg = true;
             client.Close();
         }
