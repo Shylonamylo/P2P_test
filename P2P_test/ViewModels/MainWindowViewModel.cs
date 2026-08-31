@@ -1,6 +1,8 @@
-﻿namespace P2P_test.ViewModels;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
+
+namespace P2P_test.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase
 {
-    public string Greeting { get; } = "Welcome to Avalonia!";
+    [ObservableProperty] private string _greeting = "Здарова зайбал";
 }

@@ -1,11 +1,13 @@
 using Avalonia.Controls;
+using P2P_test.ViewModels;
 
 namespace P2P_test.Views;
 
 public partial class MainWindow : Window
 {
-    public MainWindow()
+    public MainWindow(MainWindowViewModel mainWindowViewModel)
     {
+        DataContext = mainWindowViewModel;
         InitializeComponent();
     }
 }
