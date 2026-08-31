@@ -19,6 +19,10 @@ public class Engine
         
         public delegate void ClientAdressRecieved(string address);
         public event ClientAdressRecieved OnClientAdressRecieved;
+        
+        public delegate void SuccessfulConnection(bool success);
+        
+        public event SuccessfulConnection OnSuccessfulConnection;
     
         private string PeerAddress = "";
         
@@ -105,7 +109,7 @@ public class Engine
         {
             while (!Connected && !StopMsg)
             {
-                SendMessage(MessageType.Connection,"ConnectionSucess");
+                SendMessage(MessageType.Connection,"ConnectionSuccess");
                 Thread.Sleep(100);
             }
         }
@@ -123,6 +127,18 @@ public class Engine
                 try
                 {
                     Message receivedMessageObj = JsonSerializer.Deserialize<Message>(result, new JsonSerializerOptions { TypeInfoResolver = new DefaultJsonTypeInfoResolver() });
+
+                    if (!Connected)
+                    {
+                        if (receivedMessageObj != null)
+                        {
+                            if (receivedMessageObj.Type == MessageType.Connection && receivedMessageObj.Text.Equals("ConnectionSuccess"))
+                            {
+                                Connected = true;
+                                OnSuccessfulConnection.Invoke(true);
+                            }
+                        }
+                    }
 
                     OnChatMessage?.Invoke(receivedMessageObj);
                 }

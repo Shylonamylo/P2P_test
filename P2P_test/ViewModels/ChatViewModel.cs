@@ -11,6 +11,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.DependencyInjection;
 using MsBox.Avalonia;
 using MsBox.Avalonia.Enums;
+using P2P_test.Models;
 using P2P_test.Models.Models;
 using P2P_test.Models.UDP;
 using P2P_test.Views;
@@ -72,6 +73,12 @@ public partial class ChatViewModel : ViewModelBase
         {
             ClientAddress = address;
         };
+        _engine.OnSuccessfulConnection += DisplaySuccessConnectionWindow;
+    }
+
+    public void DisplaySuccessConnectionWindow(bool success)
+    {
+        DisplayMessage(new Message(MessageType.TextMessage, "Вы успешно подключились", GlobalVars.GetNewMessageID()));
     }
     
 }
