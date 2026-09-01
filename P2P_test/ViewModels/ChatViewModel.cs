@@ -69,7 +69,7 @@ public partial class ChatViewModel : ViewModelBase
         _mainWindow = mainWindow;
         _engine = _serviceProvider.GetRequiredService<Engine>();
         _engine.OnChatMessage += DisplayMessage;
-        _engine.OnClientAdressRecieved += (string address) =>
+        _engine.OnClientAddressReceived += (string address) =>
         {
             ClientAddress = address;
         };

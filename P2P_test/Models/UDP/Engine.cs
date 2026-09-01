@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using System.Threading;
-using CommunityToolkit.Mvvm.Messaging;
 using P2P_test.Models.Models;
 
 namespace P2P_test.Models.UDP;
@@ -17,70 +17,87 @@ public class Engine
         public delegate void ChatMessageHandler(Message msg);
         public event ChatMessageHandler OnChatMessage;
         
-        public delegate void ClientAdressRecieved(string address);
-        public event ClientAdressRecieved OnClientAdressRecieved;
+        public delegate void ClientAddressReceived(string address);
+        public event ClientAddressReceived OnClientAddressReceived;
         
         public delegate void SuccessfulConnection(bool success);
         
         public event SuccessfulConnection OnSuccessfulConnection;
     
-        private string PeerAddress = "";
+        private string _peerAddress = "";
         
-        private string ClientAddress = "";
+        private string? _clientAddress = "";
 
-        private IPAddress PeerIP;
+        private IPAddress _peerIp;
 
-        private IPEndPoint PeerEndPoint;
+        private IPEndPoint _peerEndPoint;
 
-        private bool Connected = false;
+        private bool _connected;
         
-        private bool StopMsg = false;
+        private bool _stopMsg;
 
-        private UdpClient client;
+        private UdpClient _client;
 
-        private List<Message> messages = new();
+        private readonly List<Message> _messagesBuffer = new();
 
-        private STUNConnector connector = new STUNConnector();
+        private readonly HashSet<uint> _messagesHistory = new();
 
-        private long KPLPacketNum = 0;
+        private readonly STUNConnector _connector = new STUNConnector();
 
-        private Thread ListenerThread;
+        public long KplPacketNum = 0;
 
-        private Thread KPLNATThread;
+        private Thread _listenerThread;
+
+        private Thread _kplnatThread;
 
         public Engine()
         {
-            var StartThread = new Thread(Start);
-            StartThread.Start();
+            var startThread = new Thread(Start);
+            startThread.Start();
         }
 
         private void Start()
         {
-            ClientAddress = connector.GetNATHole();
-            
-            OnClientAdressRecieved.Invoke(ClientAddress);
+            _clientAddress = _connector.GetNATHole();
 
-            client = connector.Client;
+            if (_clientAddress != null) OnClientAddressReceived.Invoke(_clientAddress);
 
-            KPLNATThread = new Thread(KPLpackets);
-            KPLNATThread.Start();
+            _client = _connector.Client;
+
+            _kplnatThread = new Thread(KPLpackets);
+            _kplnatThread.Start();
 
             RequestPeerIP();
 
-            ListenerThread = new Thread(MessageListenerAsync);
-            ListenerThread.Start();
+            _listenerThread = new Thread(MessageListenerAsync);
+            _listenerThread.Start();
 
             TryConnect();
 
-            KPLNATThread = new Thread(KPLpackets);
-            KPLNATThread.Start();
+            _kplnatThread = new Thread(KPLpackets);
+            _kplnatThread.Start();
         }
-        
+
+        private void CheckMessageLifeTime()
+        {
+            while (!_stopMsg)
+            {
+                foreach (var message in _messagesBuffer.ToList())
+                {
+                    if (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() > message.SendTime+500)
+                    {
+                        _messagesBuffer.Remove(message);
+                        SendMessage(MessageType.TextMessage, message.Text);
+                    }
+                }
+                Thread.Sleep(500);
+            }
+        }
         public void KPLpackets()
         {
-            if (!Connected)
+            if (!_connected)
             {
-                while (!Connected&&!StopMsg)
+                while (!_connected&&!_stopMsg)
                 {
                     SendMessage(MessageType.KeepAlive,"KPL");
                     Thread.Sleep(1000);
@@ -88,7 +105,7 @@ public class Engine
             }
             else
             {
-                while (!StopMsg)
+                while (!_stopMsg)
                 {
                     SendMessage(MessageType.KeepAlive,"KPL");
                     Thread.Sleep(1000);
@@ -97,17 +114,17 @@ public class Engine
         }
         private void RequestPeerIP()
         {
-            while (PeerAddress=="" && !StopMsg)
+            while (_peerAddress=="" && !_stopMsg)
             {
                 Thread.Sleep(500);
             }
-            PeerIP = IPAddress.Parse(PeerAddress.Split(':')[0]);
-            PeerEndPoint = new IPEndPoint(PeerIP, int.Parse(PeerAddress.Split(':')[1]));
+            _peerIp = IPAddress.Parse(_peerAddress.Split(':')[0]);
+            _peerEndPoint = new IPEndPoint(_peerIp, int.Parse(_peerAddress.Split(':')[1]));
         }
 
         private void TryConnect()
         {
-            while (!Connected && !StopMsg)
+            while (!_connected && !_stopMsg)
             {
                 SendMessage(MessageType.Connection,"ConnectionSuccess");
                 Thread.Sleep(100);
@@ -116,31 +133,63 @@ public class Engine
 
         private void MessageListenerAsync()
         {
-            while (!StopMsg)
+            while (!_stopMsg)
             {
-                var receiveTask = client.ReceiveAsync();
+                var receiveTask = _client.ReceiveAsync();
                 receiveTask.Wait();
 
                 var result = receiveTask.Result.Buffer;
-                string receivedMessage = Encoding.UTF8.GetString(result);
 
                 try
                 {
-                    Message receivedMessageObj = JsonSerializer.Deserialize<Message>(result, new JsonSerializerOptions { TypeInfoResolver = new DefaultJsonTypeInfoResolver() });
-
-                    if (!Connected)
+                    Message? receivedMessageObj = JsonSerializer.Deserialize<Message>(result, new JsonSerializerOptions { TypeInfoResolver = new DefaultJsonTypeInfoResolver() });
+    
+                    if (receivedMessageObj != null)
                     {
-                        if (receivedMessageObj != null)
+                        if (!_connected)
                         {
-                            if (receivedMessageObj.Type == MessageType.Connection && receivedMessageObj.Text.Equals("ConnectionSuccess"))
+                                if (receivedMessageObj is { Type: MessageType.Connection, Text: "ConnectionSuccess" })
+                                {
+                                    _connected = true;
+                                    OnSuccessfulConnection.Invoke(true);
+                                    continue;
+                                }
+                        }
+
+                        if (receivedMessageObj.Type == MessageType.KeepAlive)
+                        {
+                            Logger.Log($"Получен {receivedMessageObj.Type} - {receivedMessageObj.PackageId}");
+                            continue;
+                        }
+
+                        if (receivedMessageObj.Type == MessageType.Acknowledge)
+                        {
+                            uint.TryParse(receivedMessageObj.Text, out uint packageId);
+                            Logger.Log($"Получен {receivedMessageObj.Type} - {receivedMessageObj.PackageId} на {packageId}");
+                            if (!_messagesHistory.Add(packageId))
                             {
-                                Connected = true;
-                                OnSuccessfulConnection.Invoke(true);
+                                continue;
                             }
+                            Message? messageWithThisId = _messagesBuffer.Find(m=>m.PackageId == packageId);
+                            if (messageWithThisId != null)
+                            {
+                                _messagesBuffer.Remove(messageWithThisId);
+                                Logger.Log($"Сообщение {messageWithThisId.PackageId} удалено из буфера ожидания");
+                            }
+                            
+                            continue;
                         }
                     }
+                    else
+                    {
+                        continue;
+                    }
+                    
+                    SendMessage(MessageType.Acknowledge, receivedMessageObj.PackageId.ToString());
+                    
+                    Logger.Log($"Получено {receivedMessageObj.Type} - {receivedMessageObj.PackageId} - '{receivedMessageObj.Text}'");
 
-                    OnChatMessage?.Invoke(receivedMessageObj);
+                    if (_messagesHistory.Add(receivedMessageObj.PackageId)) OnChatMessage?.Invoke(receivedMessageObj);
                 }
                 catch (Exception ex)
                 {
@@ -151,28 +200,43 @@ public class Engine
 
         public void ApplyPeerAddress(string peerAddress)
         {
-            PeerAddress = peerAddress;
+            _peerAddress = peerAddress;
         }
         
         public void SendMessage(MessageType type, string text)
         {
-            uint messageID = GlobalVars.GetNewMessageID();
-            //Console.WriteLine($"Отослали {type} {text} на {PeerAddress}");
-            byte[] sendBuffer = Encoding.UTF8.GetBytes(JsonSerializer.Serialize<Message>(new Message(type, text, messageID), new JsonSerializerOptions{TypeInfoResolver = new DefaultJsonTypeInfoResolver()}));
-            client.SendAsync(sendBuffer, sendBuffer.Length, PeerEndPoint);
+            uint messageId = GlobalVars.GetNewMessageID();
+            
+            var message = new Message(type, text, messageId);
+            
+            var serializedMessage = JsonSerializer.Serialize(message,
+                new JsonSerializerOptions { TypeInfoResolver = new DefaultJsonTypeInfoResolver() });
+            
+            byte[] sendBuffer = Encoding.UTF8.GetBytes(serializedMessage);
+            
+            _client.SendAsync(sendBuffer, sendBuffer.Length, _peerEndPoint);
+            
+            Logger.Log($"Отправлено {message.Type} - {message.PackageId} - '{message.Text}'");
+            
+            if(message.Type is MessageType.KeepAlive or MessageType.Acknowledge or MessageType.Connection) return;
+            
+            _messagesBuffer.Add(message);
+            
+            Logger.Log($"{message.Type} - {message.PackageId} - '{message.Text}' отправлено в буфер ожидания");
         }
         
-        public string GetClientAddress()
+        public string? GetClientAddress()
         {
-            return ClientAddress;
+            return _clientAddress;
         }
         
         public void Stop()
         {
             SendMessage(MessageType.TextMessage, "Клиент отключился");
-            Connected = false;  
-            StopMsg = true;
-            client.Close();
+            _connected = false;  
+            _stopMsg = true;
+            _client.Close();
+            Logger.Log($"Клиент отключился");
         }
         
     }

@@ -5,23 +5,25 @@ namespace P2P_test.Models.Models;
 
 public class Message
 {
-    public MessageType Type { get; set; }
-    public string Text { get; set; }
-    public uint PackageID { get; }
+    public MessageType Type { get; init; }
+    public string Text { get; init; }
+    public uint PackageId { get; init; }
+    public long SendTime { get; init; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-    public Message(MessageType type, string text, uint packageID)
+    public Message(MessageType type, string text, uint packageId)
     {
         Type = type;
         Text = text;
-        PackageID = packageID;
+        PackageId = packageId;
     }
 }
 
-public enum MessageType
+public enum MessageType : byte
 {
     KeepAlive,
     TextMessage,
     Connection,
     Encryption,
-    PeerInfo
+    PeerInfo,
+    Acknowledge,
 }
