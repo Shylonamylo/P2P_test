@@ -49,6 +49,9 @@ public class Engine
         private Thread _listenerThread;
 
         private Thread _kplnatThread;
+        private Thread _messagesBufferWorker;
+
+        private List<(MessageType, uint, int, List<Message>)> _fragmentsBuffer = new();
 
         public Engine()
         {
@@ -76,6 +79,9 @@ public class Engine
 
             _kplnatThread = new Thread(KPLpackets);
             _kplnatThread.Start();
+
+            _messagesBufferWorker = new Thread(CheckMessageLifeTime);
+            _messagesBufferWorker.Start();
         }
 
         private void CheckMessageLifeTime()
@@ -148,12 +154,33 @@ public class Engine
                     {
                         if (!_connected)
                         {
-                                if (receivedMessageObj is { Type: MessageType.Connection, Text: "ConnectionSuccess" })
-                                {
-                                    _connected = true;
-                                    OnSuccessfulConnection.Invoke(true);
-                                    continue;
-                                }
+                            if (receivedMessageObj is { Type: MessageType.Connection, Text: "ConnectionSuccess" })
+                            {
+                                _connected = true;
+                                OnSuccessfulConnection.Invoke(true);
+                                continue;
+                            }
+                        }
+
+                        if (receivedMessageObj.Type == MessageType.FragmentInit)
+                        {
+                            if(_fragmentsBuffer.Exists(frag => frag.Item2 == receivedMessageObj.PackageId)) return;
+                            MessageType.TryParse<MessageType>(receivedMessageObj.Text.Split(',')[0], out var framentationResultMessageType);
+                            _fragmentsBuffer.Add((framentationResultMessageType, receivedMessageObj.PackageId, int.Parse(receivedMessageObj.Text.Split(',')[1]), new List<Message>()));
+                        }
+                        if (receivedMessageObj.Type == MessageType.Fragment)
+                        {
+                            var fragmentInitPackageId = int.Parse(receivedMessageObj.Text.Split(',')[1]);
+                            var cortageOfFragmentsThisInitPackage = _fragmentsBuffer
+                                .Where(frag => frag.Item2 == fragmentInitPackageId).GetEnumerator().Current;
+                            var listOfFragmentsThisInitPackage = cortageOfFragmentsThisInitPackage.Item4;
+                            if(listOfFragmentsThisInitPackage.Exists(m => m.PackageId==receivedMessageObj.PackageId)) return;
+                            listOfFragmentsThisInitPackage.Add(receivedMessageObj);
+                            if (listOfFragmentsThisInitPackage.Count == cortageOfFragmentsThisInitPackage.Item3)
+                            {
+                                var orderedListOfFragmentsThisInitPackage = listOfFragmentsThisInitPackage.OrderBy(message => message.PackageId).ToList();
+                                StartBuildFragmentedMessage(cortageOfFragmentsThisInitPackage.Item1, orderedListOfFragmentsThisInitPackage);
+                            }
                         }
 
                         if (receivedMessageObj.Type == MessageType.KeepAlive)
@@ -198,6 +225,20 @@ public class Engine
             }
         }
 
+        private void StartBuildFragmentedMessage(MessageType resultingMessageType, List<Message> fragments)
+        {
+            var fragmentStringBuilder = new StringBuilder();
+
+            foreach (var fragment in fragments)
+            {
+                fragmentStringBuilder.Append(fragment.Text);
+            }
+            
+            Message resultingMessage = new Message(resultingMessageType, fragmentStringBuilder.ToString(), GlobalVars.GetNewMessageID());
+            
+            if (_messagesHistory.Add(resultingMessage.PackageId)) OnChatMessage?.Invoke(resultingMessage);
+        }
+
         public void ApplyPeerAddress(string peerAddress)
         {
             _peerAddress = peerAddress;
@@ -208,11 +249,24 @@ public class Engine
             uint messageId = GlobalVars.GetNewMessageID();
             
             var message = new Message(type, text, messageId);
-            
+
+            SendMessage(message);
+        }
+        
+        public void SendMessage(Message message)
+        {
             var serializedMessage = JsonSerializer.Serialize(message,
                 new JsonSerializerOptions { TypeInfoResolver = new DefaultJsonTypeInfoResolver() });
             
             byte[] sendBuffer = Encoding.UTF8.GetBytes(serializedMessage);
+
+            if (sendBuffer.Length > 1200)
+            {
+                Logger.Log($"Инициализирована фрагментация сообщения, размер исходного сообщения {sendBuffer.Length}");
+                FragmentationSendMessage(message.Type, message.Text);
+                
+                return;
+            }
             
             _client.SendAsync(sendBuffer, sendBuffer.Length, _peerEndPoint);
             
@@ -224,7 +278,24 @@ public class Engine
             
             Logger.Log($"{message.Type} - {message.PackageId} - '{message.Text}' отправлено в буфер ожидания");
         }
-        
+
+        private void FragmentationSendMessage(MessageType type, string text)
+        {
+            var fragments = text.Chunk(1000).Select(ch => new string(ch)).ToArray();
+            
+            var initMessage = new Message(MessageType.FragmentInit, $"{type}, {fragments.Length}", GlobalVars.GetNewMessageID());
+            
+            SendMessage(initMessage);
+            
+            var initMessageId = initMessage.PackageId;
+            foreach (var fragment in fragments)
+            {
+                var fragmentMessage = new Message(MessageType.Fragment, $"{fragment}, {initMessageId}", GlobalVars.GetNewMessageID());
+                SendMessage(fragmentMessage);
+            }
+            
+        }
+
         public string? GetClientAddress()
         {
             return _clientAddress;

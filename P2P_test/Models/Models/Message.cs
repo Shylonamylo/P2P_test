@@ -26,4 +26,6 @@ public enum MessageType : byte
     Encryption,
     PeerInfo,
     Acknowledge,
+    Fragment,
+    FragmentInit,
 }
