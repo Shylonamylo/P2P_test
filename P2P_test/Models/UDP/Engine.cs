@@ -6,6 +6,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using System.Text.RegularExpressions;
 using System.Threading;
 using P2P_test.Models.Models;
 
@@ -90,10 +91,11 @@ public class Engine
             {
                 foreach (var message in _messagesBuffer.ToList())
                 {
-                    if (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() > message.SendTime+500)
+                    if (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() > message.SendTime+1000)
                     {
                         _messagesBuffer.Remove(message);
-                        SendMessage(MessageType.TextMessage, message.Text);
+                        Logger.Log($"Сообщение {message.Type} - {message.PackageId} переотправлено из за отсутствия ACK");
+                        SendMessage(message.Type, message.Text);
                     }
                 }
                 Thread.Sleep(500);
@@ -165,9 +167,10 @@ public class Engine
                         if (receivedMessageObj.Type == MessageType.FragmentInit)
                         {
                             if(_fragmentsBuffer.Exists(frag => frag.Item2 == receivedMessageObj.PackageId)) return;
-                            var fragmentsCount = int.Parse(receivedMessageObj.Text.Split(',')[1]);
+                            var fragmentsCount = int.Parse(receivedMessageObj.Text.Split("?|?")[1]);
                             Logger.Log($"Получен {receivedMessageObj.Type} - {receivedMessageObj.PackageId} - {fragmentsCount}");
-                            MessageType.TryParse<MessageType>(receivedMessageObj.Text.Split(',')[0], out var framentationResultMessageType);
+                            SendMessage(MessageType.Acknowledge, receivedMessageObj.PackageId.ToString());
+                            MessageType.TryParse<MessageType>(receivedMessageObj.Text.Split("?|?")[0], out var framentationResultMessageType);
                             _fragmentsBuffer.Add((framentationResultMessageType, receivedMessageObj.PackageId, fragmentsCount, new List<Message>()));
                             
                             continue;
@@ -175,18 +178,23 @@ public class Engine
                         
                         if (receivedMessageObj.Type == MessageType.Fragment)
                         {
-                            var fragmentInitPackageId = int.Parse(receivedMessageObj.Text.Split(',')[1]);
-                            var cortageOfFragmentsThisInitPackage = _fragmentsBuffer
-                                .Where(frag => frag.Item2 == fragmentInitPackageId).GetEnumerator().Current;
+                            var fragmentInitPackageId = int.Parse(receivedMessageObj.Text.Split("?|?")[0]);
+                            var cortageOfFragmentsThisInitPackage = _fragmentsBuffer.FirstOrDefault(m => m.Item2 == fragmentInitPackageId);
                             var listOfFragmentsThisInitPackage = cortageOfFragmentsThisInitPackage.Item4;
+                            
                             if(listOfFragmentsThisInitPackage.Exists(m => m.PackageId==receivedMessageObj.PackageId)) return;
+                            
                             listOfFragmentsThisInitPackage.Add(receivedMessageObj);
+                            
                             Logger.Log($"Получен {receivedMessageObj.Type} - {receivedMessageObj.PackageId}, инициализирован пакетом {fragmentInitPackageId}");
+                            SendMessage(MessageType.Acknowledge, receivedMessageObj.PackageId.ToString());
                             
                             if (listOfFragmentsThisInitPackage.Count == cortageOfFragmentsThisInitPackage.Item3)
                             {
                                 var orderedListOfFragmentsThisInitPackage = listOfFragmentsThisInitPackage.OrderBy(message => message.PackageId).ToList();
+                                
                                 Logger.Log("Все фрагменты получены, инициализирована сборка сообщения");
+                                
                                 StartBuildFragmentedMessage(cortageOfFragmentsThisInitPackage.Item1, orderedListOfFragmentsThisInitPackage);
                             }
                             
@@ -208,6 +216,7 @@ public class Engine
                                 continue;
                             }
                             Message? messageWithThisId = _messagesBuffer.Find(m=>m.PackageId == packageId);
+                            
                             if (messageWithThisId != null)
                             {
                                 _messagesBuffer.Remove(messageWithThisId);
@@ -231,6 +240,7 @@ public class Engine
                 catch (Exception ex)
                 {
                     Console.WriteLine(ex.Message);
+                    Logger.Log(ex.Message);
                 }
             }
         }
@@ -241,10 +251,14 @@ public class Engine
 
             foreach (var fragment in fragments)
             {
-                fragmentStringBuilder.Append(fragment.Text);
+                var splittedMessage = fragment.Text.Split("?|?");
+                var appendingFrag = splittedMessage[1].Substring(1, splittedMessage[1].Length-1);
+                fragmentStringBuilder.Append(appendingFrag);
             }
+
+            string text = fragmentStringBuilder.ToString();
             
-            Message resultingMessage = new Message(resultingMessageType, fragmentStringBuilder.ToString(), GlobalVars.GetNewMessageID());
+            Message resultingMessage = new Message(resultingMessageType, text, GlobalVars.GetNewMessageID());
             
             Logger.Log($"Фрагментированное особщение успешно собрано, ID - {resultingMessage.PackageId}, количество фрагментов {fragments.Count}");
             
@@ -295,14 +309,15 @@ public class Engine
         {
             var fragments = text.Chunk(100).Select(ch => new string(ch)).ToArray();
             
-            var initMessage = new Message(MessageType.FragmentInit, $"{type}, {fragments.Length}", GlobalVars.GetNewMessageID());
+            var initMessage = new Message(MessageType.FragmentInit, $"{type} ?|? {fragments.Length}", GlobalVars.GetNewMessageID());
             
             SendMessage(initMessage);
             
             var initMessageId = initMessage.PackageId;
+            
             foreach (var fragment in fragments)
             {
-                var fragmentMessage = new Message(MessageType.Fragment, $"{fragment}, {initMessageId}", GlobalVars.GetNewMessageID());
+                var fragmentMessage = new Message(MessageType.Fragment, $"{initMessageId} ?|? {fragment}", GlobalVars.GetNewMessageID());
                 SendMessage(fragmentMessage);
             }
             
