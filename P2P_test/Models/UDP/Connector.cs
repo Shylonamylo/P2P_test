@@ -9,7 +9,7 @@ namespace P2P_test.Models.UDP;
 
 public class STUNConnector
 {
-        string[] STUNServers = {"stun.l.google.com:19302", "stun1.l.google.com:19302", "stun2.l.google.com:19302", "stun3.l.google.com:19302" };
+        string[] STUNServers = ["stun.l.google.com:19302", "stun1.l.google.com:19302", "stun2.l.google.com:19302", "stun3.l.google.com:19302"];
         public UdpClient Client { get; private set; } = new();
         public bool Connected { get; private set; }
         public IPEndPoint ServerEndPoint { get; private set; }
@@ -27,7 +27,12 @@ public class STUNConnector
 
                     byte[] data = { 0x00, 0x01, 0x00, 0x00, 0x21, 0x12, 0xA4, 0x42, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xF2, 0xF1, 0xFF, 0xF1, 0x1F, 0x12, 0x4F };
 
-                    IPAddress iPAddress = await GetIPByHostnameAsync(hostnamePort[0]);
+                    IPAddress? iPAddress = await GetIPByHostnameAsync(hostnamePort[0]);
+                    
+                    if (iPAddress == null)
+                    {
+                        continue;
+                    }
 
                     int port = 3478;
 
@@ -121,12 +126,14 @@ public class STUNConnector
             return result;
         }
 
-        private async Task<IPAddress>? GetIPByHostnameAsync(string hostname)
+        private async Task<IPAddress?>? GetIPByHostnameAsync(string hostname)
         {
             try
             {
-                using var cts = new CancellationTokenSource(500);
-                var addrList = await Dns.GetHostAddressesAsync(hostname).WaitAsync(cts.Token);
+                using var cts = new CancellationTokenSource(1000);
+
+                var addrList = await Dns.GetHostAddressesAsync(hostname, cts.Token);
+                
                 return addrList[0];
             }
             catch (Exception ex)

@@ -154,75 +154,10 @@ public class Engine
     
                     if (receivedMessageObj != null)
                     {
-                        if (!_connected)
-                        {
-                            if (receivedMessageObj is { Type: MessageType.Connection, Text: "ConnectionSuccess" })
-                            {
-                                _connected = true;
-                                OnSuccessfulConnection.Invoke(true);
-                                continue;
-                            }
-                        }
+                        var processingResult = ProcessIncomingMessage(receivedMessageObj);
 
-                        if (receivedMessageObj.Type == MessageType.FragmentInit)
+                        if (processingResult)
                         {
-                            if(_fragmentsBuffer.Exists(frag => frag.Item2 == receivedMessageObj.PackageId)) return;
-                            var fragmentsCount = int.Parse(receivedMessageObj.Text.Split("?|?")[1]);
-                            Logger.Log($"Получен {receivedMessageObj.Type} - {receivedMessageObj.PackageId} - {fragmentsCount}");
-                            SendMessage(MessageType.Acknowledge, receivedMessageObj.PackageId.ToString());
-                            MessageType.TryParse<MessageType>(receivedMessageObj.Text.Split("?|?")[0], out var framentationResultMessageType);
-                            _fragmentsBuffer.Add((framentationResultMessageType, receivedMessageObj.PackageId, fragmentsCount, new List<Message>()));
-                            
-                            continue;
-                        }
-                        
-                        if (receivedMessageObj.Type == MessageType.Fragment)
-                        {
-                            var fragmentInitPackageId = int.Parse(receivedMessageObj.Text.Split("?|?")[0]);
-                            var cortageOfFragmentsThisInitPackage = _fragmentsBuffer.FirstOrDefault(m => m.Item2 == fragmentInitPackageId);
-                            var listOfFragmentsThisInitPackage = cortageOfFragmentsThisInitPackage.Item4;
-                            
-                            if(listOfFragmentsThisInitPackage.Exists(m => m.PackageId==receivedMessageObj.PackageId)) return;
-                            
-                            listOfFragmentsThisInitPackage.Add(receivedMessageObj);
-                            
-                            Logger.Log($"Получен {receivedMessageObj.Type} - {receivedMessageObj.PackageId}, инициализирован пакетом {fragmentInitPackageId}");
-                            SendMessage(MessageType.Acknowledge, receivedMessageObj.PackageId.ToString());
-                            
-                            if (listOfFragmentsThisInitPackage.Count == cortageOfFragmentsThisInitPackage.Item3)
-                            {
-                                var orderedListOfFragmentsThisInitPackage = listOfFragmentsThisInitPackage.OrderBy(message => message.PackageId).ToList();
-                                
-                                Logger.Log("Все фрагменты получены, инициализирована сборка сообщения");
-                                
-                                StartBuildFragmentedMessage(cortageOfFragmentsThisInitPackage.Item1, orderedListOfFragmentsThisInitPackage);
-                            }
-                            
-                            continue;
-                        }
-
-                        if (receivedMessageObj.Type == MessageType.KeepAlive)
-                        {
-                            Logger.Log($"Получен {receivedMessageObj.Type} - {receivedMessageObj.PackageId}");
-                            continue;
-                        }
-
-                        if (receivedMessageObj.Type == MessageType.Acknowledge)
-                        {
-                            uint.TryParse(receivedMessageObj.Text, out uint packageId);
-                            Logger.Log($"Получен {receivedMessageObj.Type} - {receivedMessageObj.PackageId} на {packageId}");
-                            if (!_messagesHistory.Add(packageId))
-                            {
-                                continue;
-                            }
-                            Message? messageWithThisId = _messagesBuffer.Find(m=>m.PackageId == packageId);
-                            
-                            if (messageWithThisId != null)
-                            {
-                                _messagesBuffer.Remove(messageWithThisId);
-                                Logger.Log($"Сообщение {messageWithThisId.PackageId} удалено из буфера ожидания");
-                            }
-                            
                             continue;
                         }
                     }
@@ -243,6 +178,86 @@ public class Engine
                     Logger.Log(ex.Message);
                 }
             }
+        }
+
+        private bool ProcessIncomingMessage(Message receivedMessageObj)
+        {
+            switch (receivedMessageObj.Type)
+            {
+                case MessageType.Connection:
+
+                    _connected = true;
+                    OnSuccessfulConnection.Invoke(true);
+                    
+                    break;
+                
+                case MessageType.FragmentInit:
+                    
+                    if(_fragmentsBuffer.Exists(frag => frag.Item2 == receivedMessageObj.PackageId)) break;
+                    var fragmentsCount = int.Parse(receivedMessageObj.Text.Split("?|?")[1]);
+                    Logger.Log($"Получен {receivedMessageObj.Type} - {receivedMessageObj.PackageId} - {fragmentsCount}");
+                    SendMessage(MessageType.Acknowledge, receivedMessageObj.PackageId.ToString());
+                
+                    MessageType.TryParse<MessageType>(receivedMessageObj.Text.Split("?|?")[0], out var framentationResultMessageType);
+                
+                    _fragmentsBuffer.Add((framentationResultMessageType, receivedMessageObj.PackageId, fragmentsCount, new List<Message>()));
+                    
+                    break;
+                
+                case MessageType.Fragment:
+                    
+                    var fragmentInitPackageId = int.Parse(receivedMessageObj.Text.Split("?|?")[0]);
+                    var cortageOfFragmentsThisInitPackage = _fragmentsBuffer.FirstOrDefault(m => m.Item2 == fragmentInitPackageId);
+                    var listOfFragmentsThisInitPackage = cortageOfFragmentsThisInitPackage.Item4;
+                            
+                    if(listOfFragmentsThisInitPackage.Exists(m => m.PackageId==receivedMessageObj.PackageId)) break;
+                            
+                    listOfFragmentsThisInitPackage.Add(receivedMessageObj);
+                            
+                    Logger.Log($"Получен {receivedMessageObj.Type} - {receivedMessageObj.PackageId}, инициализирован пакетом {fragmentInitPackageId}");
+                    SendMessage(MessageType.Acknowledge, receivedMessageObj.PackageId.ToString());
+                            
+                    if (listOfFragmentsThisInitPackage.Count == cortageOfFragmentsThisInitPackage.Item3)
+                    {
+                        var orderedListOfFragmentsThisInitPackage = listOfFragmentsThisInitPackage.OrderBy(message => message.PackageId).ToList();
+                                
+                        Logger.Log("Все фрагменты получены, инициализирована сборка сообщения");
+                                
+                        StartBuildFragmentedMessage(cortageOfFragmentsThisInitPackage.Item1, orderedListOfFragmentsThisInitPackage);
+                    }
+                    
+                    break;
+                
+                case MessageType.KeepAlive:
+                    
+                    Logger.Log($"Получен {receivedMessageObj.Type} - {receivedMessageObj.PackageId}");
+                    
+                    break;
+                
+                case MessageType.Acknowledge:
+                    
+                    uint.TryParse(receivedMessageObj.Text, out uint packageId);
+                    Logger.Log($"Получен {receivedMessageObj.Type} - {receivedMessageObj.PackageId} на {packageId}");
+                    if (!_messagesHistory.Add(packageId))
+                    {
+                        break;
+                    }
+                    Message? messageWithThisId = _messagesBuffer.Find(m=>m.PackageId == packageId);
+                            
+                    if (messageWithThisId != null)
+                    {
+                        _messagesBuffer.Remove(messageWithThisId);
+                        Logger.Log($"Сообщение {messageWithThisId.PackageId} удалено из буфера ожидания");
+                    }
+
+                    break;
+                
+                default:
+                    return false;
+                
+            }
+
+            return true;
         }
 
         private void StartBuildFragmentedMessage(MessageType resultingMessageType, List<Message> fragments)

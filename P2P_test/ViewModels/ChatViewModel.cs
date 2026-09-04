@@ -24,6 +24,7 @@ public partial class ChatViewModel : ViewModelBase
     [ObservableProperty] private ObservableCollection<ChatMessage> _chatMessages = new();
     [ObservableProperty] private string _clientAddress;
     [ObservableProperty] private string _peerAddress = "";
+    [ObservableProperty] private ChatMessage _selectedMessage;
     
     private Engine _engine;
 
@@ -51,6 +52,7 @@ public partial class ChatViewModel : ViewModelBase
             var chatMessage = new ChatMessage(_messageText, true); 
             ChatMessages.Add(chatMessage);
             MessageText = "";
+            SelectedMessage = ChatMessages[^1];
         }
     }
 
@@ -60,6 +62,8 @@ public partial class ChatViewModel : ViewModelBase
         {
             var chatMessage = new ChatMessage(message.Text, false); 
             ChatMessages.Add(chatMessage);
+            
+            SelectedMessage = ChatMessages[^1];
         }
     }
     
